@@ -2,17 +2,17 @@ defmodule TodoList do
   @moduledoc """
   Simple todo-list
   """
-  defimpl(String.Chars, do: def(to_string(this), do: inspect(this)))
 
+  @typedoc "Entry format"
+  @type entry :: %{date: Date.t(), id: non_neg_integer(), title: String.t()}
   @typedoc "The type of todolist"
   @type t :: %{
           __struct__: TodoList,
-          auto_id: number(),
-          entries: map()
+          auto_id: non_neg_integer(),
+          entries: %{optional(non_neg_integer()) => entry()}
         }
 
   defstruct auto_id: 1, entries: %{}
-
 
   @doc """
   Create new Todo list. Empty if without params, or from initial list.
@@ -20,7 +20,7 @@ defmodule TodoList do
       iex> TodoList.new()
       %TodoList{auto_id: 1, entries: %{}}
   """
-  @spec new(any) :: Todolist.t() # fix any
+  @spec new(Enumerable.t()) :: t()
   def new(entries \\ []) do
     Enum.reduce(
       entries,
@@ -35,8 +35,8 @@ defmodule TodoList do
       iex> TodoList.new() |> TodoList.add_entry(%{date: ~D[2021-12-19], title: "job"})
       %TodoList{auto_id: 2, entries: %{1 => %{date: ~D[2021-12-19], id: 1, title: "job"}}}
   """
-  @spec add_entry(TodoList.t(), map) :: TodoList.t()
-  def add_entry(todo_list, entry) do
+  @spec add_entry(t(), entry()) :: t()
+  def add_entry(%TodoList{} = todo_list, entry) do
     entry = Map.put(entry, :id, todo_list.auto_id)
     new_entries = Map.put(todo_list.entries, todo_list.auto_id, entry)
 
@@ -53,11 +53,11 @@ defmodule TodoList do
         1 => %{date: ~D[2021-12-19], id: 1, title: "job"},
         2 => %{date: ~D[2021-12-19], id: 2, title: "vacation"}}}
   """
-  @spec entries(TodoList.t(), any) :: list
-  def entries(todo_list, date) do
+  @spec entries(t(), any()) :: [any()]
+  def entries(%TodoList{} = todo_list, date) do
     todo_list.entries
-    |> Stream.filter(fn {_, entry} -> entry.date == date end)
-    |> Enum.map(fn {_, entry} -> entry end)
+    |> Stream.filter(&match?({_, %{date: ^date}}, &1))
+    |> Enum.map(&elem(&1, 1))
   end
 
   @doc """
@@ -71,8 +71,8 @@ defmodule TodoList do
         1 => %{date: ~D[2021-12-19], id: 1, title: "Shopping"},
         2 => %{date: ~D[2021-12-19], id: 2, title: "vacation"}}}
   """
-  @spec update_entry(TodoList.t(), any) :: list
-  def update_entry(todo_list, %{} = new_entry) do
+  @spec update_entry(t(), any()) :: t()
+  def update_entry(%TodoList{} = todo_list, %{} = new_entry) do
     update_entry(todo_list, new_entry.id, fn _ -> new_entry end)
   end
 
@@ -87,15 +87,15 @@ defmodule TodoList do
         1 => %{date: ~D[2021-12-19], id: 1, title: "Shopping"},
         2 => %{date: ~D[2021-12-19], id: 2, title: "vacation"}}}
   """
-  @spec update_entry(TodoList.t(), number(), any) :: list
-  def update_entry(todo_list, entry_id, updater_fun) do
-    case Map.fetch(todo_list.entries, entry_id) do
+  @spec update_entry(t(), number(), any()) :: t()
+  def update_entry(%TodoList{entries: entries} = todo_list, entry_id, updater_fun) do
+    case Map.fetch(entries, entry_id) do
       :error ->
         todo_list
 
       {:ok, old_entry} ->
         new_entry = updater_fun.(old_entry)
-        new_entries = Map.put(todo_list.entries, new_entry.id, new_entry)
+        new_entries = Map.put(entries, new_entry.id, new_entry)
         %TodoList{todo_list | entries: new_entries}
     end
   end
@@ -110,9 +110,9 @@ defmodule TodoList do
       %TodoList{auto_id: 3, entries: %{
         2 => %{date: ~D[2021-12-19], id: 2, title: "vacation"}}}
   """
-  @spec delete_entry(TodoList.t(), number()) :: list
-  def delete_entry(todo_list, entry_id) do
-    %TodoList{todo_list | entries: Map.delete(todo_list.entries, entry_id)}
+  @spec delete_entry(t(), number()) :: t()
+  def delete_entry(%TodoList{entries: entries} = todo_list, entry_id) do
+    %TodoList{todo_list | entries: Map.delete(entries, entry_id)}
   end
 end
 
@@ -124,41 +124,41 @@ defmodule TodoList.CsvImporter do
   @doc """
   Create new todo list from csv file.
   """
-  @spec import(String.t()) :: list
+  @spec import(String.t()) :: TodoList.t()
   def import(file_name) do
     file_name
-    |> read_lines
-    |> create_entries
+    |> read_lines()
+    |> create_entries()
     |> TodoList.new()
   end
 
-  @doc false
+  @spec read_lines(Path.t()) :: Enumerable.t()
   defp read_lines(file_name) do
     file_name
     |> File.stream!()
     |> Stream.map(&String.replace(&1, "\n", ""))
   end
 
-  @doc false
+  @spec create_entries(Enumerable.t()) :: Enumerable.t()
   defp create_entries(lines) do
     lines
     |> Stream.map(&extract_fields/1)
     |> Stream.map(&create_entry/1)
   end
 
-  @doc false
+  @spec extract_fields(String.t()) :: {Date.t(), String.t()}
   defp extract_fields(line) do
     line
     |> String.split(",")
-    |> convert_date
+    |> convert_date()
   end
 
-  @doc false
+  @spec convert_date([String.t()]) :: {Date.t(), String.t()}
   defp convert_date([date_string, title]) do
     {parse_date(date_string), title}
   end
 
-  @doc false
+  @spec parse_date(String.t()) :: Date.t()
   defp parse_date(date_string) do
     [year, month, day] =
       date_string
@@ -169,8 +169,16 @@ defmodule TodoList.CsvImporter do
     date
   end
 
-  @doc false
+  # here the dialyzer helps: the proper typing is :: TodoList.entry()
+  @spec create_entry({Date.t(), String.t()}) :: %{date: Date.t(), title: String.t()}
   defp create_entry({date, title}) do
     %{date: date, title: title}
+  end
+
+  defimpl String.Chars do
+    @moduledoc false
+    def to_string(this) do
+      inspect(this)
+    end
   end
 end

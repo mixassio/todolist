@@ -8,6 +8,7 @@ defmodule TodolistTest do
       %{date: ~D[2018-12-20], title: "Shopping"},
       %{date: ~D[2018-12-19], title: "Movies"}
     ]
+
     answer = %TodoList{
       auto_id: 4,
       entries: %{
@@ -16,9 +17,8 @@ defmodule TodolistTest do
         3 => %{date: ~D[2018-12-19], id: 3, title: "Movies"}
       }
     }
-    assert TodoList.new(entries) ==  answer
+
+    assert TodoList.new(entries) == answer
     assert TodoList.CsvImporter.import("todos.csv") == answer
   end
-
-
 end
